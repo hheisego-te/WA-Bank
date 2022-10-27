@@ -1,18 +1,40 @@
 import requests
+import json
 from datetime import datetime, timedelta
+from Operations import SuperCrud
 
-OAuth = ""
+# Keep Secrets Safe
+with open("secrets.json") as f:
+
+    configs = json.loads(f.read())
+
+def get_env_var(setting, configs=configs):
+
+    try:
+        val = configs[setting]
+        if val == "True":
+            val = True
+        elif val == "False":
+            val = False
+
+        return val
+
+    except KeyError:
+
+        raise NotImplementedError("secrets.json is missing")
+
+superCrud = SuperCrud()
+OAuth = get_env_var("OAuth")
 headers = {
     'Content-Type': 'application/json',
     'Authorization': 'Bearer ' + OAuth,
 }
 
-audit_end_date = (datetime.now() + timedelta(days=-1)).strftime('%Y-%m-%dT%H:%M:%S')
-audit_init_date = (datetime.now() + timedelta(days=-31)).strftime('%Y-%m-%dT%H:%M:%S')
+audit_end_date = (datetime.now() + timedelta(hours=0)).strftime('%Y-%m-%dT%H:%M:%S')
+audit_init_date = (datetime.now() + timedelta(hours=-24)).strftime('%Y-%m-%dT%H:%M:%S')
 
-audit_url = "https://api.thousandeyes.com/v6/dashboards/" # + "?&from=" + audit_init_date + "&to=" +audit_end_date
+audit_url = "https://api.thousandeyes.com/v6/dashboards/" + get_env_var("dashboardId")  + "?&from=" + audit_init_date + "&to=" +audit_end_date
 audit = requests.get(url=audit_url, headers=headers).json()
-
 
 
 clean_up = []
@@ -49,10 +71,7 @@ for mapping in audit["reportDataComponentData"]["groupLabelMaps"]:
 
 
 print(audit['from'] + " to: " +  audit['to'])
-
 to_mongo = {}
-print(clean_up)
-
 for i in clean_up:
 
     if i["value"] < 100.0:
@@ -66,4 +85,13 @@ for i in clean_up:
         to_mongo.setdefault(i["groupLabel"], i['value'])
 
 
-print(to_mongo)
+to_mongo.update({"from": audit['from'], "to": audit['to']})
+
+
+insert = superCrud.create(to_mongo, table='Platinum')
+insert['id'] = str(insert['_id'])
+del insert['_id']
+
+print(insert)
+
+
